@@ -148,8 +148,49 @@ end subroutine userdef_dostuff
 ! now designed by you entirely, and activated with 'radmc3d myaction')
 ! then here is your chance!
 !------------------------------------------------------------------------
-subroutine userdef_action()
+subroutine userdef_action(rt_mcparams,do_resetseed)
+  ! calculate the mean intensity and also the flux (vector field)
+  ! this will mainly follow how the mean intensity field was calculated
+
   implicit none
+  type(mc_params) :: rt_mcparams
+  integer :: ierror
+  logical,optional :: do_resetseed
+
+  rt_incl_dust               = .true.
+ 
+  !
+  ! A message:
+  !
+  call write_message_rad_processes()
+  !
+  ! If the dust emission is included, then make sure the dust data,
+  ! density and temperature are read. If yes, do not read again.
+  !
+  if(rt_incl_dust) then
+     call read_dustdata(1)
+     call read_dust_density(1)
+     call read_dust_temperature(1)
+  endif
+  !
+  ! Set the mc_frequencies(:) array
+  !
+  call read_mc_frequencies()
+  !
+  ! Now call the monochromatic Monte Carlo
+  !
+  call do_monte_carlo_scattering(rt_mcparams,ierror,   &
+         resetseed=do_resetseed,flux=.true.)
+  !
+  ! Write the mean intensities to a file
+  !
+  write(stdo,*) 'Writing mean intensity file by userdef'
+  call write_meanint_to_file()
+
+  ! write the flux directions to a file
+  write(stdo,*) 'Writing flux file by userdef'
+  call write_fluxfield_to_file()
+
 end subroutine userdef_action
 
 

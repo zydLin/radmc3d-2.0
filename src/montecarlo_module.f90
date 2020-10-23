@@ -204,6 +204,8 @@ double precision, allocatable :: mcscat_scatsrc_iquv(:,:,:,:)
 ! stored in mc_frequencies. 
 !
 double precision, allocatable :: mcscat_meanint(:,:)
+double precision, allocatable :: mcscat_flux(:,:,:)
+
 !
 ! The array of the thermal emissivity
 !
@@ -288,6 +290,7 @@ contains
 !  mcaction           =1   --> Bjorkman & Wood
 !                     =101 --> Scattering MC to compute the scattering source
 !                     =102 --> Scattering MC to compute the mean intensity
+!                     =103 --> scattering MC to compute flux field
 !--------------------------------------------------------------------------
 subroutine montecarlo_init(params,ierr,mcaction,resetseed)
   implicit none
@@ -677,7 +680,7 @@ subroutine montecarlo_init(params,ierr,mcaction,resetseed)
              'grain alignment in thermal MC even though alignment_mode.gt.0!'
      endif
      !
-  elseif((mcaction.eq.101).or.(mcaction.eq.102)) then
+  elseif(mcaction.gt.100) then
      !
      ! The frequency-by-frequency scattering Monte Carlo simulation
      !
@@ -736,7 +739,7 @@ subroutine montecarlo_init(params,ierr,mcaction,resetseed)
         else
            mcscat_scatsrc_iquv(:,:,:,:) = 0.d0
         endif
-     else
+     elseif(mcaction.eq.102) then 
         allocate(mcscat_meanint(1:mc_nrfreq,1:nrcellsmax),STAT=ierr)
         if(ierr.ne.0) then
            write(stdo,*) 'ERROR in Montecarlo Module: Could not allocate mcscat_meanint()'
@@ -747,6 +750,23 @@ subroutine montecarlo_init(params,ierr,mcaction,resetseed)
         else
            mcscat_meanint(:,:) = 0.d0
         endif
+     elseif(mcaction.eq.103) then
+        allocate(mcscat_meanint(1:mc_nrfreq,1:nrcellsmax),STAT=ierr)
+        allocate(mcscat_flux(3,1:mc_nrfreq,1:nrcellsmax),STAT=ierr)
+        if(ierr.ne.0) then
+           write(stdo,*) 'ERROR in Montecarlo Module: '
+           write(stdo,*) '      Could not allocate mcscat_meanint() and mcscat_flux()'
+           write(stdo,*) '      As this can be a huge array, perhaps you have memory limitations?'
+           write(stdo,*) '      This array requires ',mc_nrfreq* &
+                (nrcellsmax*4.d0)/(1024.*1024),' Mbytes'
+           stop
+        else
+           mcscat_meanint(:,:) = 0.d0
+           mcscat_flux(:,:,:) = 0.d0
+        endif
+     else
+         write(stdo,*) 'ERROR in Montecarlo Module: mcaction unknown'
+         stop
      endif
      !
      ! 
@@ -1181,6 +1201,7 @@ subroutine montecarlo_partial_cleanup()
   if(allocated(zcumul)) deallocate(zcumul)
   if(allocated(mcscat_scatsrc_iquv)) deallocate(mcscat_scatsrc_iquv)
   if(allocated(mcscat_meanint)) deallocate(mcscat_meanint)
+  if(allocated(mcscat_flux)) deallocate(mcscat_flux)
   if(allocated(mc_cumulthermemis)) deallocate(mc_cumulthermemis)
   if(allocated(mc_stellarsrc_templates)) deallocate(mc_stellarsrc_templates)
   if(allocated(mc_energy_stars)) deallocate(mc_energy_stars)
@@ -2775,15 +2796,16 @@ end subroutine do_monte_carlo_bjorkmanwood
 ! as from the dust (in contrast to the Bjorkman & Wood Monte Carlo above).
 !
 ! --------------------------------------------------------------------------
-subroutine do_monte_carlo_scattering(params,ierror,resetseed,scatsrc,meanint)
+subroutine do_monte_carlo_scattering(params,ierror,resetseed, &
+      scatsrc,meanint,flux)
   implicit none
   type(mc_params) :: params
   integer :: ierror,ierrpriv,inu
   doubleprecision :: ener,lumtotinv,temp,freq,fact
   logical :: ievenodd
   logical,optional :: resetseed
-  logical,optional :: scatsrc,meanint
-  logical :: compute_scatsrc,compute_meanint
+  logical,optional :: scatsrc,meanint,flux
+  logical :: compute_scatsrc,compute_meanint,compute_flux
   integer*8 :: iphot,nphot,cnt,cntdump
   integer :: countwrite,index
   integer :: ispec,istar,icell,illum
@@ -2808,8 +2830,11 @@ subroutine do_monte_carlo_scattering(params,ierror,resetseed,scatsrc,meanint)
   else 
      compute_meanint=.false.
   endif
-  if((.not.compute_scatsrc).and.(.not.compute_meanint)) then
-     write(stdo,*) 'Monte Carlo Scattering: Must set scatsrc or meanint.'
+  if(present(flux)) then 
+     compute_flux=flux
+  endif
+  if((.not.compute_scatsrc).and.(.not.compute_meanint).and.(.not.compute_flux)) then
+     write(stdo,*) 'Monte Carlo Scattering: Must set scatsrc or meanint or flux.'
      stop 3765
   endif
   if(compute_scatsrc.and.compute_meanint) then
@@ -2861,7 +2886,10 @@ subroutine do_monte_carlo_scattering(params,ierror,resetseed,scatsrc,meanint)
      call montecarlo_init(params,ierror,101,resetseed)
   elseif(compute_meanint) then
      call montecarlo_init(params,ierror,102,resetseed)
+  elseif(compute_flux) then 
+     call montecarlo_init(params,ierror,103,resetseed)
   else
+     write(stdo,*) 'ERROR in montecarlo_module.fd90: unknown action'
      stop 6658
   endif
   !
@@ -7201,6 +7229,21 @@ subroutine walk_cells_scat(params,taupath,ener,inu,arrived,ispecc,ierror)
                 mcscat_meanint(ray_inu,ray_index) + mnint
         endif
         !
+        ! add photons to flux field
+        ! this usually means that mcscat_meanint exists too
+        !
+        if(allocated(mcscat_flux)) then
+           ! don't need the 4pi
+           mnint = dss * enerav / cellvolume(ray_index)
+
+           mcscat_flux(1,ray_inu,ray_index) = &
+                mcscat_flux(1,ray_inu,ray_index) + mnint * ray_cart_dirx
+           mcscat_flux(2,ray_inu,ray_index) = &
+                mcscat_flux(2,ray_inu,ray_index) + mnint * ray_cart_diry
+           mcscat_flux(3,ray_inu,ray_index) = &
+                mcscat_flux(3,ray_inu,ray_index) + mnint * ray_cart_dirz
+        endif 
+        !
         ! Compute the location of this point
         !
         fr     = (taupath-tau)/dtau
@@ -7557,6 +7600,20 @@ subroutine walk_cells_scat(params,taupath,ener,inu,arrived,ispecc,ierror)
            mnint = ds * enerav / ( cellvolume(ray_index) * 12.566371d0 )
            mcscat_meanint(ray_inu,ray_index) =                            &
                 mcscat_meanint(ray_inu,ray_index) + mnint
+        endif
+        !
+        ! add photons to flux field
+        ! this usually means that mcscat_meanint exists too
+        ! should we use ds or dss as above???
+        if(allocated(mcscat_flux)) then
+           ! don't need the 4pi
+           mnint = ds * enerav / cellvolume(ray_index)
+           mcscat_flux(1,ray_inu,ray_index) = & 
+                mcscat_flux(1,ray_inu,ray_index) + mnint * ray_cart_dirx
+           mcscat_flux(2,ray_inu,ray_index) = & 
+                mcscat_flux(2,ray_inu,ray_index) + mnint * ray_cart_diry
+           mcscat_flux(3,ray_inu,ray_index) = & 
+                mcscat_flux(3,ray_inu,ray_index) + mnint * ray_cart_dirz
         endif
         !
         ! Compute the new ener and the new tauabs
@@ -8688,6 +8745,116 @@ subroutine write_meanint_to_file()
   endif
 end subroutine write_meanint_to_file
 
+
+!--------------------------------------------------------------------------
+!                  WRITE FLUX FIELD TO FILE
+!--------------------------------------------------------------------------
+subroutine write_fluxfield_to_file()
+  implicit none
+  integer :: icell,index,inu,i,ierr,precis
+  integer(kind=8) :: nn,kk
+  logical :: fex
+  double precision, allocatable :: data(:)
+  !
+  ! Determine the precision
+  !
+  if(rto_single) then
+     precis = 4
+  else
+     precis = 8
+  endif
+  !
+  ! Now write the dust temperature
+  !
+  if(igrid_type.lt.100) then
+     !
+     ! Regular (AMR) grid
+     ! 
+     ! Just make sure that the cell list is complete
+     !
+     if(amr_tree_present) then
+        call amr_compute_list_all()
+     endif
+     !
+     ! Do a stupidity check
+     !
+     if(nrcells.ne.amr_nrleafs) stop 3209
+     !
+     ! Open file and write the mean intensity to it
+     !
+     if(rto_style.eq.1) then
+        !
+        ! Write the mean intensity in ascii form
+        !
+        ! NOTE: The new format is "2", and includes a list of frequencies
+        !
+        open(unit=1,file='flux_field.out')
+        write(1,*) 2                                   ! Format number
+        write(1,*) nrcellsinp
+        write(1,*) mc_nrfreq
+        write(1,*) (mc_frequencies(inu),inu=1,mc_nrfreq)
+     elseif(rto_style.eq.2) then
+        !
+        ! Write the mean intensity in f77-style unformatted form,
+        ! using a record length given by rto_reclen
+        !
+        ! NOTE: The new format is "2", and includes a list of frequencies
+        !
+        open(unit=1,file='flux_field.uout',form='unformatted')
+        nn = 2
+        kk = rto_reclen
+        write(1) nn,kk               ! Format number and record length
+        nn = nrcellsinp
+        kk = mc_nrfreq
+        write(1) nn,kk
+        write(1) (mc_frequencies(inu),inu=1,mc_nrfreq)
+     elseif(rto_style.eq.3) then
+        !
+        ! C-compliant binary
+        !
+        ! NOTE: The new format is "2", and includes a list of frequencies
+        !
+        open(unit=1,file='flux_field.bout',status='replace',access='stream')
+        nn = 2
+        kk = precis
+        write(1) nn,kk               ! Format number and precision
+        nn = nrcellsinp
+        kk = mc_nrfreq
+        write(1) nn,kk
+        write(1) (mc_frequencies(inu),inu=1,mc_nrfreq)
+     else
+        write(stdo,*) 'ERROR: Do not know I/O style ',rto_style
+        stop
+     endif
+     !
+     ! Now write the flux field one wavelength at a time 
+     !
+     do inu=1,mc_nrfreq
+        call write_vectorfield(1,rto_style,precis, &
+             3,3,nrcellsinp,mc_nrfreq,inu, &
+             vector1=mcscat_flux)
+     enddo
+     !
+     ! Close
+     !
+     close(1)
+  else
+     !
+     ! Other grids not yet implemented
+     !
+     write(stdo,*) 'ERROR: Only regular and AMR grids implemented'
+     stop
+  endif
+  !
+  ! If the grid is internally made, then we must make sure that
+  ! the grid has been written to file, otherwise the output file
+  ! created here makes no sense.
+  !
+  if((.not.grid_was_read_from_file).and.(.not.grid_was_written_to_file)) then
+     call write_grid_file()
+     grid_was_written_to_file = .true.     ! Avoid multiple writings
+  endif
+end subroutine write_fluxfield_to_file
 
 
 !--------------------------------------------------------------------------

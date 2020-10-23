@@ -983,7 +983,7 @@ program radmc3d
      !----------------------------------------------------------------
      !
      if(do_userdef_action) then
-        call userdef_action()
+        call userdef_action(rt_mcparams)
      endif
      !
      !----------------------------------------------------------------

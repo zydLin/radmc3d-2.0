@@ -1505,6 +1505,29 @@ end subroutine write_scalarfield
 !-------------------------------------------------------------------------
 subroutine write_vectorfield(unit,style,precis,nv0,nv,nc,nv1,iv1, &
                             vector0,vector1)
+!
+! parameters
+! ----------
+! unit : int
+!    io unit
+! style :
+! precis : int
+!    the precision
+! nv0 : int
+!    the length of the 1st dimensions
+! nv : int
+!    how many elements of the 1st dimsions desired
+! nc : int
+!    the length of the last dimension, ie the number of cells
+! nv1 : int
+!    if the vector is vector1, then nv1 is the length of the 2nd dimension
+! iv1 : int
+!    the index of the 2nd dimension
+! vector0 : 2d array
+!    the vector field that only depends on direction and cell location
+! vector1 : 3d array
+!    the vector field that has an extra dimension
+! 
   implicit none
   integer :: style,unit,irec,index,nv,nc,ii,ierr,precis,nv1,iv1,nv0
   integer(kind=8) :: iiformat,nn,kk
