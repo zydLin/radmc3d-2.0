@@ -8622,7 +8622,7 @@ subroutine montecarlo_aligned_randomphot(index,inu,ener,pkg)
                          mc_align_orth(:,inu,ispec),                        &
                          mc_align_para(:,inu,ispec),                        &
                          mc_align_opcumul(:,inu,ispec),                     &
-                         grainalign_dir(:,index),grainalign_eff(index))
+                         grainalign_dir(:,ispec,index),grainalign_eff(ispec,index))
   !
   ! Now make the dimensionless polarization state 
   ! dimension-full

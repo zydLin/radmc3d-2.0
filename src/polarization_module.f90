@@ -1719,14 +1719,18 @@ subroutine read_grainaligndir_field(action)
         !
         do icell=1,nrcells
            index = cellindex(icell)
-           dummy = grainalign_dir(1,index)**2 + grainalign_dir(2,index)**2 + grainalign_dir(3,index)**2 
-           if(dummy.eq.0.d0) then
-              write(stdo,*) 'ERROR: Grain alignment direction vector has length 0'
-              stop 73328
-           endif
-           grainalign_dir(1,index) = grainalign_dir(1,index) / dummy
-           grainalign_dir(2,index) = grainalign_dir(2,index) / dummy
-           grainalign_dir(3,index) = grainalign_dir(3,index) / dummy
+           do ispec=1,dust_nr_species
+              dummy = grainalign_dir(1,ispec,index)**2 & 
+                 + grainalign_dir(2,ispec,index)**2 &
+                 + grainalign_dir(3,ispec,index)**2 
+              if(dummy.eq.0.d0) then
+                 write(stdo,*) 'ERROR: Grain alignment direction vector has length 0'
+                 stop 73328
+              endif
+              grainalign_dir(1,ispec,index) = grainalign_dir(1,ispec,index) / dummy
+              grainalign_dir(2,ispec,index) = grainalign_dir(2,ispec,index) / dummy
+              grainalign_dir(3,ispec,index) = grainalign_dir(3,ispec,index) / dummy
+           enddo
         enddo
         return
      endif
@@ -1775,7 +1779,7 @@ subroutine read_grainaligndir_field(action)
      ! Read format number
      !
      read(1,*) iiformat
-     if(iiformat.ne.1) then
+     if(iiformat.ne.2) then
         write(stdo,*) 'ERROR: Format number of '//TRIM(filename1)//' is invalid/unknown.'
         write(stdo,*) 'Format number = ',iiformat
         stop
@@ -1784,6 +1788,10 @@ subroutine read_grainaligndir_field(action)
      ! Read number of grid points
      !
      read(1,*) nn
+     !
+     ! read number of dust species
+     !
+     read(1,*) kk
   elseif(fex2) then
      !
      ! Open f77-style unformatted (with records)
@@ -1795,12 +1803,13 @@ subroutine read_grainaligndir_field(action)
      !
      read(1) iiformat,reclen8
      reclen = reclen8
-     if(iiformat.ne.1) then
+     if(iiformat.ne.2) then
         write(stdo,*) 'ERROR: Format number of '//TRIM(filename2)//' is invalid/unknown.'
         write(stdo,*) 'Format number = ',iiformat
         stop
      endif
      read(1) nn
+     read(1) kk
   else
      !
      ! Open C-compliant binary
@@ -1811,7 +1820,7 @@ subroutine read_grainaligndir_field(action)
      ! Read format number
      !
      read(1) iiformat
-     if(iiformat.ne.1) then
+     if(iiformat.ne.2) then
         write(stdo,*) 'ERROR: Format number of '//TRIM(filename3)//' is invalid/unknown.'
         write(stdo,*) 'Format number = ',iiformat
         stop
@@ -1829,26 +1838,36 @@ subroutine read_grainaligndir_field(action)
      write(stdo,*) nn,nrcellsinp
      stop
   endif
+  if(kk.ne.dust_nr_species) then 
+     write(stdo,*) 'ERROR: grainalign_dir.*inp does not have same number'
+     write(stdo,*) '       of dust species as the grid.'
+     write(stdo,*) kk, dust_nr_species
+     stop
+  endif 
   !
   ! Create the grainalign_dir arrays
   !
   if(allocated(grainalign_dir)) deallocate(grainalign_dir)
   if(allocated(grainalign_eff)) deallocate(grainalign_eff)
-  allocate(grainalign_dir(1:3,1:nrcells),STAT=ierr)
+  allocate(grainalign_dir(1:3,1:dust_nr_species,1:nrcells),STAT=ierr)
   if(ierr.ne.0) then
      write(stdo,*) 'ERROR: Could not allocate the grainalign_dir() array'
      stop
   endif
-  allocate(grainalign_eff(1:nrcells),STAT=ierr)
+  allocate(grainalign_eff(1:dust_nr_species,1:nrcells),STAT=ierr)
   if(ierr.ne.0) then
      write(stdo,*) 'ERROR: Could not allocate the grainalign_eff() array'
      stop
   endif
   !
   ! Now read the grainalign_dir field
+  ! one dust species at a time
   !
-  call read_vectorfield(1,style,precis,3,3,nrcellsinp,1,1,reclen=reclen, &
-                        vector0=grainalign_dir)
+  do ispec=1, dust_nr_species
+     call read_vectorfield(1,style,precis,3,3,nrcellsinp, &
+                        dust_nr_species,ispec,reclen=reclen, &
+                        vector1=grainalign_dir)
+  enddo
   !
   ! Close file
   !
@@ -1858,39 +1877,43 @@ subroutine read_grainaligndir_field(action)
   !
   do icell=1,nrcells
      index = cellindex(icell)
-     dummy = grainalign_dir(1,index)**2 + grainalign_dir(2,index)**2 + grainalign_dir(3,index)**2 
-     dummy = sqrt(dummy)
-     if(dummy.gt.0.d0) then
+
+     do ispec=1,dust_nr_species 
+
+        dummy = grainalign_dir(1,ispec,index)**2 + grainalign_dir(2,ispec, index)**2 + grainalign_dir(3,ispec,index)**2 
+        dummy = sqrt(dummy)
+        if(dummy.gt.0.d0) then
+           !
+           ! The dir vector must be of length unity
+           !
+           grainalign_dir(1,ispec,index) = grainalign_dir(1,ispec,index) / dummy
+           grainalign_dir(2,ispec,index) = grainalign_dir(2,ispec,index) / dummy
+           grainalign_dir(3,ispec,index) = grainalign_dir(3,ispec,index) / dummy
+        else
+           !
+           ! When vector has length 0, then it does not matter in which 
+           ! direction this unit vector points. Just take something,
+           ! for consistency.
+           !
+           grainalign_dir(1,ispec,index) = 1.0
+           grainalign_dir(2,ispec,index) = 0.0
+           grainalign_dir(3,ispec,index) = 0.0
+        endif
         !
-        ! The dir vector must be of length unity
+        ! The length of the original vector gives the efficiency
+        ! of the alignment. It cannot be >1
         !
-        grainalign_dir(1,index) = grainalign_dir(1,index) / dummy
-        grainalign_dir(2,index) = grainalign_dir(2,index) / dummy
-        grainalign_dir(3,index) = grainalign_dir(3,index) / dummy
-     else
-        !
-        ! When vector has length 0, then it does not matter in which 
-        ! direction this unit vector points. Just take something,
-        ! for consistency.
-        !
-        grainalign_dir(1,index) = 1.0
-        grainalign_dir(2,index) = 0.0
-        grainalign_dir(3,index) = 0.0
-     endif
-     !
-     ! The length of the original vector gives the efficiency
-     ! of the alignment. It cannot be >1
-     !
-     if(dummy.gt.1.01d0) then
-        write(stdo,*) 'ERROR: Length of alignment vector > 1. This would mean ', &
-             'more than 100% efficient alignment. Aborting.'
-        stop
-     endif
-     if(dummy.gt.1.d0) then
-        dummy = 1.d0
-     endif
-     grainalign_eff(index) = dummy
-  enddo
+        if(dummy.gt.1.01d0) then
+           write(stdo,*) 'ERROR: Length of alignment vector > 1. This would mean ', &
+                'more than 100% efficient alignment. Aborting.'
+           stop
+        endif
+        if(dummy.gt.1.d0) then
+           dummy = 1.d0
+        endif
+        grainalign_eff(ispec,index) = dummy
+     enddo
+  enddo 
   !
 end subroutine read_grainaligndir_field
 

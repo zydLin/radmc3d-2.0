@@ -195,6 +195,7 @@ module rtglobal_module
   integer :: nrcells = 0
   integer :: nrcellsmax = 0
   integer :: nrcellsinp = 0
+  integer :: dust_nr_species = 0
   !
   ! Frequency array
   !
@@ -255,8 +256,8 @@ module rtglobal_module
   ! For grain alignment in polarization of dust emission (and in future: scattering)
   ! The alignment direction (a unit vector) and alignment efficiency (between 0 and 1)
   !
-  double precision, allocatable :: grainalign_dir(:,:)
-  double precision, allocatable :: grainalign_eff(:)
+  double precision, allocatable :: grainalign_dir(:,:,:)
+  double precision, allocatable :: grainalign_eff(:,:)
   !
   ! The cell volume array
   !

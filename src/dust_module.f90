@@ -102,7 +102,7 @@ module dust_module
   !
   ! The main dust opacity information
   !
-  integer :: dust_nr_species = 0
+  !integer :: dust_nr_species = 0 !! define this as a global variable instead
   double precision, allocatable :: dust_kappa_abs(:,:), dust_kappa_scat(:,:)
   double precision, allocatable :: dust_gfactor(:,:)
   logical :: dust_use_stokes=.false.
