@@ -225,6 +225,7 @@ program radmc3d
   !                                      ! motion off. This is perhaps slower
   !                                      ! but safer.
   rt_mcparams%optim_dtau       = 2.d0
+  rt_mcparams%store_meanint_mode = 0     ! mode for storing mean intensity.
   !
   ! Parameters for the Modified Random Walk:
   !
@@ -2298,6 +2299,11 @@ subroutine read_radmcinp_file()
      call parse_input_double ('lines_partition_temp0@        ',lines_partition_temp0)
      call parse_input_double ('lines_partition_temp1@        ',lines_partition_temp1)
      call parse_input_integer('lines_show_pictograms@        ',lines_show_pictograms)
+     call parse_input_integer('store_meanint_mode@           ', &
+          rt_mcparams%store_meanint_mode)
+     ! 
+     ! modified random walk related
+     !
      idum=0
      call parse_input_integer('modified_random_walk@         ',idum)
      if(idum.eq.0) then
@@ -2314,6 +2320,9 @@ subroutine read_radmcinp_file()
      call parse_input_double ('mrw_gamma@                    ',rt_mcparams%mrw_gamma)
      call parse_input_double ('mrw_taustepback@              ',rt_mcparams%mrw_taustepback)
      call parse_input_double ('mrw_tempthres@                ',rt_mcparams%mrw_tempthres)
+     ! 
+     ! image related
+     !
      idum=0
      call parse_input_integer('unformatted@                  ',idum)
      if(idum.eq.0) then

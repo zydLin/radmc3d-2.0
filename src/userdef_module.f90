@@ -96,7 +96,6 @@ subroutine userdef_parse_main_namelist()
   ! hence the many whitespaces.
   !
   call parse_input_integer('examplekeyword@               ',userdef_examplevariable)
-  !
 end subroutine userdef_parse_main_namelist
 
 
@@ -151,6 +150,9 @@ end subroutine userdef_dostuff
 subroutine userdef_action(rt_mcparams,do_resetseed)
   ! calculate the mean intensity and also the flux (vector field)
   ! this will mainly follow how the mean intensity field was calculated
+  ! store_meanint_mode : integer
+  !    0 : only store total mean intensity
+  !    1 : store total mean intensity and from star
 
   implicit none
   type(mc_params) :: rt_mcparams
@@ -186,10 +188,16 @@ subroutine userdef_action(rt_mcparams,do_resetseed)
   !
   write(stdo,*) 'Writing mean intensity file by userdef'
   call write_meanint_to_file()
-
+  ! 
   ! write the flux directions to a file
   write(stdo,*) 'Writing flux file by userdef'
   call write_fluxfield_to_file()
+  ! 
+  ! write additional mean intensities
+  if(rt_mcparams%store_meanint_mode.eq.1) then 
+     write(stdo,*) 'Writing mean intensity from star by userdef'
+     call write_other_meanint_to_file(5)
+  endif 
 
 end subroutine userdef_action
 

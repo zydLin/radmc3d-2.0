@@ -204,6 +204,7 @@ double precision, allocatable :: mcscat_scatsrc_iquv(:,:,:,:)
 ! stored in mc_frequencies. 
 !
 double precision, allocatable :: mcscat_meanint(:,:)
+double precision, allocatable :: mcscat_meanint_star(:,:)
 double precision, allocatable :: mcscat_flux(:,:,:)
 
 !
@@ -291,6 +292,11 @@ contains
 !                     =101 --> Scattering MC to compute the scattering source
 !                     =102 --> Scattering MC to compute the mean intensity
 !                     =103 --> scattering MC to compute flux field
+! Arguments from params:
+!  store_meanint_mode : integer
+!      mode for storing mean intensity depending on the source of photons
+!      0 = nothing special, just save total mean intensity
+!      1 = save mean intensity from stars
 !--------------------------------------------------------------------------
 subroutine montecarlo_init(params,ierr,mcaction,resetseed)
   implicit none
@@ -769,6 +775,20 @@ subroutine montecarlo_init(params,ierr,mcaction,resetseed)
          stop
      endif
      !
+     ! some extra allocations: store_meanint_mode
+     if((mcaction.eq.102).or.(mcaction.eq.103)) then 
+        ! allocate mean intensity depending on the origin of the source
+        if(params%store_meanint_mode.eq.1) then
+           allocate(mcscat_meanint_star(1:mc_nrfreq,1:nrcellsmax),STAT=ierr)
+           if(ierr.ne.0) then
+              write(stdo,*) 'ERROR in Montecarlo Module: '
+              write(stdo,*) ' Could not allocate mcscat_meanint_star() '
+           else
+              mcscat_meanint_star(:,:) = 0.d0
+           endif
+        endif
+     endif
+     !
      ! 
      ! Check if the nr of viewing directions is set by the caller
      ! Note that even if isotropic scattering is used, nrdirs must be
@@ -1201,6 +1221,7 @@ subroutine montecarlo_partial_cleanup()
   if(allocated(zcumul)) deallocate(zcumul)
   if(allocated(mcscat_scatsrc_iquv)) deallocate(mcscat_scatsrc_iquv)
   if(allocated(mcscat_meanint)) deallocate(mcscat_meanint)
+  if(allocated(mcscat_meanint_star)) deallocate(mcscat_meanint_star)
   if(allocated(mcscat_flux)) deallocate(mcscat_flux)
   if(allocated(mc_cumulthermemis)) deallocate(mc_cumulthermemis)
   if(allocated(mc_stellarsrc_templates)) deallocate(mc_stellarsrc_templates)
@@ -5516,6 +5537,7 @@ subroutine walk_full_path_scat(params,inu,ierror)
   integer :: ibnd,bc_idir,bc_ilr,ix,iy,iz,illum,ierr
   logical :: ok,arrived,usesphere,todo_photpkg
   type(amr_branch), pointer :: acell
+  integer :: phot_source  ! ID of the source of photons
   !
   ! Do checks
   !
@@ -5557,11 +5579,14 @@ subroutine walk_full_path_scat(params,inu,ierror)
      !
      rn        = 2.d0
      !
+     phot_source = 5
+     !
   endif
   if(rn.ge.mc_cumlum5) then
      !
      ! ----- We have a photon emitted by a star (or, for 1dpp, an illum source) -----
      !
+     phot_source = 5
      if(nstars.ge.1) then
         !
         ! We have a star or multiple stars
@@ -5797,6 +5822,9 @@ subroutine walk_full_path_scat(params,inu,ierror)
      ! ----- We have a photon emitted by one of the thermal boundaries -----
      !       NOTE: This should only happen in Cartesian coordinates
      !
+     phot_source = 4
+     !
+     !
      ! Find which boundary
      !
      rn = ran2(iseed)*mc_bc_lumcum(7)
@@ -5935,6 +5963,9 @@ subroutine walk_full_path_scat(params,inu,ierror)
      ! ----- We have a photon emitted by the continuous stellar source -----
      !       (for simulations of galaxies and such)
      !
+     phot_source = 3
+     !
+     !
      ! First determine which cell to emit from
      !
      rn = ran2(iseed)
@@ -5984,6 +6015,9 @@ subroutine walk_full_path_scat(params,inu,ierror)
      ! ----- We have a photon emitted by the external environment into -----
      !       our computational domain. This is done from a sphere 
      !       centered around the center of the coordinate system.
+     ! 
+     phot_source = 2
+     !
      !
      ray_index = 0
      !
@@ -6023,6 +6057,9 @@ subroutine walk_full_path_scat(params,inu,ierror)
      !
      ! ----- We have a photon emitted by quantum-heated grains -----
      !
+     phot_source = 1
+     !
+     !
      ! First determine which cell to emit from
      !
      rn = ran2(iseed)
@@ -6044,6 +6081,9 @@ subroutine walk_full_path_scat(params,inu,ierror)
   else
      !
      ! ----- We have a photon emitted by thermal emission -----
+     ! 
+     phot_source = 0
+     !
      !
      ! First determine which cell to emit from
      !
@@ -6164,7 +6204,8 @@ subroutine walk_full_path_scat(params,inu,ierror)
      !
      ! Move photon to next scattering event
      ! 
-     call walk_cells_scat(params,taupath,ener,inu,arrived,ispec,ierror)
+     call walk_cells_scat(params,taupath,ener,inu,arrived,ispec,ierror, &
+          phot_source=phot_source)
      !
      ! If arrived at end-point or escaped to infinity, then return
      !
@@ -6636,7 +6677,8 @@ end subroutine walk_cells_thermal
 !       array. The 'real' inu is, of course, mcscat_inus(inu) or 
 !       equivalently ray_inu.
 !--------------------------------------------------------------------------
-subroutine walk_cells_scat(params,taupath,ener,inu,arrived,ispecc,ierror)
+subroutine walk_cells_scat(params,taupath,ener,inu,arrived,ispecc,ierror, &
+     phot_source)
   implicit none
   type(mc_params) :: params
   integer :: ispec,ierror,inu,ispecc,idir,iddr
@@ -6651,6 +6693,7 @@ subroutine walk_cells_scat(params,taupath,ener,inu,arrived,ispecc,ierror)
   doubleprecision :: xbk,ybk,cosphievent,sinphievent
   doubleprecision :: deltaphi,cosdphi,sindphi
   integer :: idirs
+  integer, optional :: phot_source
   !$ logical::continue
   !
   ! Reset
@@ -7229,6 +7272,21 @@ subroutine walk_cells_scat(params,taupath,ener,inu,arrived,ispecc,ierror)
                 mcscat_meanint(ray_inu,ray_index) + mnint
         endif
         !
+        ! additional mean intensity
+        !
+        if(present(phot_source)) then 
+           ! 
+           ! add photons to mean intensity from star
+           ! mcscat_meanint definitely exists 
+           !
+           if((allocated(mcscat_meanint_star)).and.(phot_source.eq.5)) then 
+              dss   = dtauscat / alpha_s_tot
+              mnint = dss * enerav / ( cellvolume(ray_index) * 12.566371d0 )
+              mcscat_meanint_star(ray_inu,ray_index) = &
+                   mcscat_meanint_star(ray_inu,ray_index) + mnint
+           endif 
+        endif
+        !
         ! add photons to flux field
         ! this usually means that mcscat_meanint exists too
         !
@@ -7600,6 +7658,20 @@ subroutine walk_cells_scat(params,taupath,ener,inu,arrived,ispecc,ierror)
            mnint = ds * enerav / ( cellvolume(ray_index) * 12.566371d0 )
            mcscat_meanint(ray_inu,ray_index) =                            &
                 mcscat_meanint(ray_inu,ray_index) + mnint
+        endif
+        !
+        ! additional mean intensity
+        !
+        if(present(phot_source)) then
+           ! 
+           ! add photons to mean intensity from star
+           ! mcscat_meanint definitely exists 
+           !
+           if((allocated(mcscat_meanint_star)).and.(phot_source.eq.5)) then
+              mnint = ds * enerav / ( cellvolume(ray_index) * 12.566371d0 )
+              mcscat_meanint_star(ray_inu,ray_index) = &
+                   mcscat_meanint_star(ray_inu,ray_index) + mnint
+           endif
         endif
         !
         ! add photons to flux field
@@ -8653,7 +8725,7 @@ subroutine write_meanint_to_file()
      precis = 8
   endif
   !
-  ! Now write the dust temperature
+  ! Now write the mean intensity 
   !
   if(igrid_type.lt.100) then
      !
@@ -8745,6 +8817,137 @@ subroutine write_meanint_to_file()
   endif
 end subroutine write_meanint_to_file
 
+!--------------------------------------------------------------------------
+!                  WRITE other MEAN INTENSITY TO FILE
+!--------------------------------------------------------------------------
+subroutine write_other_meanint_to_file(isource)
+  ! writes the mean intensity file for specified sources 
+  ! Arguments
+  ! ---------
+  ! isource : int
+  !    the ID of photon source
+  !    5 = star 
+  implicit none
+  integer :: icell,index,inu,i,ierr,precis
+  integer :: isource
+  character*80 :: filepref, filename
+  integer(kind=8) :: nn,kk
+  logical :: fex
+  double precision, allocatable :: data(:)
+  !
+  ! Determine prefix of source
+  !
+  if(isource.eq.5) then 
+     filepref='mean_intensity_star'
+  else
+     write(stdo,*) 'ERROR: source of mean intensity not implemented ',isource
+     stop 
+  endif 
+  !
+  ! Determine the precision
+  !
+  if(rto_single) then
+     precis = 4
+  else
+     precis = 8
+  endif
+  !
+  ! Now write the mean intensity 
+  !
+  if(igrid_type.lt.100) then
+     !
+     ! Regular (AMR) grid
+     ! 
+     ! Just make sure that the cell list is complete
+     !
+     if(amr_tree_present) then
+        call amr_compute_list_all()
+     endif
+     !
+     ! Do a stupidity check
+     !
+     if(nrcells.ne.amr_nrleafs) stop 3209
+     !
+     ! Open file and write the mean intensity to it
+     !
+     if(rto_style.eq.1) then
+        !
+        ! Write the mean intensity in ascii form
+        !
+        ! NOTE: The new format is "2", and includes a list of frequencies
+        !
+        filename=trim(filepref)//'.out'
+        open(unit=1,file=filename)
+        write(1,*) 2                                   ! Format number
+        write(1,*) nrcellsinp
+        write(1,*) mc_nrfreq
+        write(1,*) (mc_frequencies(inu),inu=1,mc_nrfreq)
+     elseif(rto_style.eq.2) then
+        !
+        ! Write the mean intensity in f77-style unformatted form,
+        ! using a record length given by rto_reclen
+        !
+        ! NOTE: The new format is "2", and includes a list of frequencies
+        !
+        filename=trim(filepref)//'.uout'
+        open(unit=1,file=filename,form='unformatted')
+        nn = 2
+        kk = rto_reclen
+        write(1) nn,kk               ! Format number and record length
+        nn = nrcellsinp
+        kk = mc_nrfreq
+        write(1) nn,kk
+        write(1) (mc_frequencies(inu),inu=1,mc_nrfreq)
+     elseif(rto_style.eq.3) then
+        !
+        ! C-compliant binary
+        !
+        ! NOTE: The new format is "2", and includes a list of frequencies
+        !
+        filename=trim(filepref)//'.bout'
+        open(unit=1,file=filename,status='replace',access='stream')
+        nn = 2
+        kk = precis
+        write(1) nn,kk               ! Format number and precision
+        nn = nrcellsinp
+        kk = mc_nrfreq
+        write(1) nn,kk
+        write(1) (mc_frequencies(inu),inu=1,mc_nrfreq)
+     else
+        write(stdo,*) 'ERROR: Do not know I/O style ',rto_style
+        stop
+     endif
+     !
+     ! Now write the mean intensity one wavelength at a time 
+     !
+     if(isource.eq.5) then
+        do inu=1,mc_nrfreq
+            call write_scalarfield(1,rto_style,precis,nrcellsinp, &
+                 mc_nrfreq,1,inu,1,rto_reclen,                    &
+                 scalar1=mcscat_meanint_star)
+        enddo
+     endif 
+     !
+     ! Close
+     !
+     close(1)
+  else
+     !
+     ! Other grids not yet implemented
+     !
+     write(stdo,*) 'ERROR: Only regular and AMR grids implemented'
+     stop
+  endif
+  !
+  ! If the grid is internally made, then we must make sure that
+  ! the grid has been written to file, otherwise the output file
+  ! created here makes no sense.
+  !
+  if((.not.grid_was_read_from_file).and.(.not.grid_was_written_to_file)) then
+     call write_grid_file()
+     grid_was_written_to_file = .true.     ! Avoid multiple writings
+  endif
+end subroutine write_other_meanint_to_file
 
 !--------------------------------------------------------------------------
 !                  WRITE FLUX FIELD TO FILE

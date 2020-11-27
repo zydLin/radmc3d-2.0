@@ -87,6 +87,11 @@ module rtglobal_module
      double precision :: mrw_gamma          ! The minimal Rosseland tau distance from wall for MRW
      double precision :: mrw_taustepback    ! The tiny step back from the wall at the end of MRW
      double precision :: mrw_tempthres      ! If T_dust < tempthres, then do not use mrw_enthres
+  ! 
+     integer :: store_meanint_mode          ! mode for storing mean intensity
+                                            ! 0 = only store total mean intensity
+                                            ! 1 = additionally store stellar component
+  ! 
   end type mc_params
   !
   ! The Monte Carlo parameter file
