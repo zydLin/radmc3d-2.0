@@ -1779,7 +1779,7 @@ subroutine read_grainaligndir_field(action)
      ! Read format number
      !
      read(1,*) iiformat
-     if(iiformat.ne.2) then
+     if(iiformat.ne.1) then
         write(stdo,*) 'ERROR: Format number of '//TRIM(filename1)//' is invalid/unknown.'
         write(stdo,*) 'Format number = ',iiformat
         stop
@@ -1820,14 +1820,14 @@ subroutine read_grainaligndir_field(action)
      ! Read format number
      !
      read(1) iiformat
-     if(iiformat.ne.2) then
+     if(iiformat.ne.1) then
         write(stdo,*) 'ERROR: Format number of '//TRIM(filename3)//' is invalid/unknown.'
         write(stdo,*) 'Format number = ',iiformat
         stop
      endif
      read(1) nn
      precis = nn
-     read(1) nn
+     read(1) nn,kk
   endif
   !
   ! Do some checks
